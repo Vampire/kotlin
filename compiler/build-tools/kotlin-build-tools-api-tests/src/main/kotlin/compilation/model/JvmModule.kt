@@ -70,6 +70,7 @@ class JvmModule(
     }
 
     private fun generateClasspathSnapshot(dependency: Dependency): Path {
+        //TODO(KT-62555) one last step - configure the inlined local classes snapshotting
         val snapshot = BaseTest.compilationService.calculateClasspathSnapshot(
             dependency.location.toFile(),
             ClassSnapshotGranularity.CLASS_MEMBER_LEVEL
