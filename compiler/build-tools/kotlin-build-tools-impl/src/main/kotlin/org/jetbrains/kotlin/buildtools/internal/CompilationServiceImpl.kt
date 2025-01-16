@@ -68,7 +68,14 @@ internal object CompilationServiceImpl : CompilationService {
     private val buildIdToSessionFlagFile: MutableMap<ProjectId, File> = ConcurrentHashMap()
 
     override fun calculateClasspathSnapshot(classpathEntry: File, granularity: ClassSnapshotGranularity) =
-        ClasspathEntrySnapshotImpl(ClasspathEntrySnapshotter.snapshot(classpathEntry, granularity, DoNothingBuildMetricsReporter))
+        ClasspathEntrySnapshotImpl(
+            ClasspathEntrySnapshotter.snapshot(
+                classpathEntry,
+                //TODO(KT-62555) one last step - add argument
+                ClasspathEntrySnapshotter.Settings(granularity, parseInlinedLocalClasses = false),
+                DoNothingBuildMetricsReporter
+            )
+        )
 
     override fun makeCompilerExecutionStrategyConfiguration() = CompilerExecutionStrategyConfigurationImpl()
 

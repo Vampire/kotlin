@@ -86,6 +86,9 @@ abstract class BuildToolsApiClasspathEntrySnapshotTransform : TransformAction<Bu
             parameters.gradleUserHomeDir.get().asFile,
             parameters.gradleReadOnlyDependenciesCacheDir.orNull?.asFile
         )
+        val parseInlinedLocalClasses = false
+        //TODO(KT-62555) one last step - extend this to the actual gradle properties / transform input params
+        // tests probably call calculateClasspathSnapshot directly anyway? well, no matter
 
         val classLoader = parameters.classLoadersCachingService.get()
             .getClassLoader(parameters.classpath.toList(), SharedApiClassesClassLoaderProvider)

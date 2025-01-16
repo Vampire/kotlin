@@ -17,6 +17,7 @@ import org.jetbrains.kotlin.incremental.impl.ClassNodeSnapshotter.snapshotClassE
 import org.jetbrains.kotlin.incremental.impl.ClassNodeSnapshotter.snapshotField
 import org.jetbrains.kotlin.incremental.impl.ClassNodeSnapshotter.snapshotMethod
 import org.jetbrains.kotlin.incremental.impl.ClassNodeSnapshotter.sortClassMembers
+import org.jetbrains.kotlin.incremental.impl.KotlinClassInfoGenerator
 import org.jetbrains.kotlin.incremental.impl.SelectiveClassVisitor
 import org.jetbrains.kotlin.incremental.storage.toByteArray
 import org.jetbrains.kotlin.konan.file.use
@@ -32,6 +33,11 @@ import java.util.zip.ZipFile
 /** Computes a [ClasspathEntrySnapshot] of a classpath entry (directory or jar). */
 object ClasspathEntrySnapshotter {
 
+    data class Settings(
+        val granularity: ClassSnapshotGranularity,
+        val parseInlinedLocalClasses: Boolean
+    )
+
     private val DEFAULT_CLASS_FILTER = { unixStyleRelativePath: String, isDirectory: Boolean ->
         !isDirectory
                 && unixStyleRelativePath.endsWith(".class", ignoreCase = true)
@@ -41,7 +47,7 @@ object ClasspathEntrySnapshotter {
 
     fun snapshot(
         classpathEntry: File,
-        granularity: ClassSnapshotGranularity,
+        settings: Settings,
         metrics: BuildMetricsReporter<GradleBuildTime, GradleBuildPerformanceMetric> = DoNothingBuildMetricsReporter
     ): ClasspathEntrySnapshot {
         DirectoryOrJarReader.create(classpathEntry).use { directoryOrJarReader ->
@@ -54,7 +60,7 @@ object ClasspathEntrySnapshotter {
                 }
             }
             val snapshots = metrics.measure(GradleBuildTime.SNAPSHOT_CLASSES) {
-                ClassSnapshotter.snapshot(classes, granularity, metrics)
+                ClassSnapshotter.snapshot(classes, settings, metrics)
             }
             return ClasspathEntrySnapshot(
                 classSnapshots = classes.map { it.classFile.unixStyleRelativePath }.zip(snapshots).toMap(LinkedHashMap())
@@ -68,7 +74,7 @@ object ClassSnapshotter {
 
     fun snapshot(
         classes: List<ClassFileWithContentsProvider>,
-        granularity: ClassSnapshotGranularity,
+        settings: ClasspathEntrySnapshotter.Settings,
         metrics: BuildMetricsReporter<GradleBuildTime, GradleBuildPerformanceMetric> = DoNothingBuildMetricsReporter
     ): List<ClassSnapshot> {
         fun ClassFile.getClassName(): JvmClassName {
@@ -78,6 +84,20 @@ object ClassSnapshotter {
 
         val classNameToClassFileMap: Map<JvmClassName, ClassFileWithContentsProvider> = classes.associateBy { it.classFile.getClassName() }
         val classFileToSnapshotMap = mutableMapOf<ClassFileWithContentsProvider, ClassSnapshot>()
+
+        // TODO (KT-62555) define real generator implementation context type
+        //
+        // the general implementation idea is as follows:
+        // 1. do normal pass, detect local class accesses in inline functions. [context holds two-level Map "class ->> fun ->> used lambda instances"]
+        // 2. (we already have classNameToClassFileMap) on Snapshotter level, do extra bytecode-reading pass on the required local classes.
+        //    I think we can hash pretty much everything, future tests will confirm or deny that
+        // 3. update the extraInfo with affected inline functions
+        // P.S. if some of the used local classes are from the external modules, we could not use them for updating the extraInfo.
+        //      it's a limitation but it's not too bad for the initial solution
+        val generatorContext = KotlinClassInfoGenerator.Context(
+            useInlinedLocalClassesAsPartOfInlineFunctionHash = settings.parseInlinedLocalClasses
+        )
+        val generator = KotlinClassInfoGenerator(generatorContext)
 
         fun snapshotClass(classFile: ClassFileWithContentsProvider): ClassSnapshot {
             return classFileToSnapshotMap.getOrPut(classFile) {
@@ -97,10 +117,10 @@ object ClassSnapshotter {
                         InaccessibleClassSnapshot
                     }
                     clazz.classInfo.isKotlinClass -> metrics.measure(GradleBuildTime.SNAPSHOT_KOTLIN_CLASSES) {
-                        snapshotKotlinClass(clazz, granularity)
+                        snapshotKotlinClass(clazz, settings.granularity, classInfoGenerator = generator)
                     }
                     else -> metrics.measure(GradleBuildTime.SNAPSHOT_JAVA_CLASSES) {
-                        snapshotJavaClass(clazz, granularity)
+                        snapshotJavaClass(clazz, settings.granularity)
                     }
                 }
             }
@@ -127,9 +147,13 @@ object ClassSnapshotter {
     }
 
     /** Computes a [KotlinClassSnapshot] of the given Kotlin class. */
-    private fun snapshotKotlinClass(classFile: ClassFileWithContents, granularity: ClassSnapshotGranularity): KotlinClassSnapshot {
-        val kotlinClassInfo =
-            KotlinClassInfo.createFrom(classFile.classInfo.classId, classFile.classInfo.kotlinClassHeader!!, classFile.contents)
+    private fun snapshotKotlinClass(
+        classFile: ClassFileWithContents,
+        granularity: ClassSnapshotGranularity,
+        classInfoGenerator: KotlinClassInfoGenerator
+    ): KotlinClassSnapshot {
+        val kotlinClassInfo = classInfoGenerator
+            .createFrom(classFile.classInfo.classId, classFile.classInfo.kotlinClassHeader!!, classFile.contents)
         val classId = kotlinClassInfo.classId
         val classAbiHash = KotlinClassInfoExternalizer.toByteArray(kotlinClassInfo).hashToLong()
         val classMemberLevelSnapshot = kotlinClassInfo.takeIf { granularity == CLASS_MEMBER_LEVEL }
