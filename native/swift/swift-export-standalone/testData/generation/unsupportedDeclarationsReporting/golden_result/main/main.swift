@@ -3,6 +3,20 @@
 import KotlinRuntime
 
 public final class Foo: KotlinRuntime.KotlinBase {
+    public final class Inner: KotlinRuntime.KotlinBase {
+        package override init(
+            __externalRCRef: Swift.UInt
+        ) {
+            super.init(__externalRCRef: __externalRCRef)
+        }
+        public init(
+            outer: main.Foo
+        ) {
+            let __kt = Foo_Inner_init_allocate()
+            super.init(__externalRCRef: __kt)
+            Foo_Inner_init_initialize__TypesOfArguments__Swift_UInt_main_Foo__(__kt, outer.__externalRCRef())
+        }
+    }
     public final class Nested: KotlinRuntime.KotlinBase {
         public override init() {
             let __kt = Foo_Nested_init_allocate()
@@ -64,6 +78,5 @@ public extension ExportedKotlinPackages.a.b.c {
 // Can't export foo: inline functions are not supported yet.
 // Can't export MyInterface: interface classifiers are not supported yet.
 // Can't export Foo.extPropMember: extension properties are not supported yet.
-// Can't export Foo.Inner: inner classes are not supported yet.
 // Can't export Foo.Nested.plus: operators are not supported yet.
 // Can't export a.b.c.E.values: static functions are not supported yet.
