@@ -11,8 +11,8 @@ import org.jetbrains.kotlin.analysis.api.symbols.KaValueParameterSymbol
 import org.jetbrains.kotlin.sir.SirOrigin
 import org.jetbrains.kotlin.sir.SirParameter
 
-public data class KotlinSource(
-    val symbol: KaSymbol,
+public open class KotlinSource(
+    public val symbol: KaSymbol,
 ) : SirOrigin.Foreign.SourceCode
 
 public class KotlinRuntimeElement : SirOrigin.Foreign.SourceCode
