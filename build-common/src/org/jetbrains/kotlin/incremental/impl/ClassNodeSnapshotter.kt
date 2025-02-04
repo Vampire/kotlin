@@ -60,12 +60,6 @@ object ClassNodeSnapshotter {
         classNode.methods.sortWith(compareBy({ it.name }, { it.desc }))
     }
 
-    fun ByteArray.hashToLong(): Long {
-        // Note: The returned type `Long` is 64-bit, but we currently don't have a good 64-bit hash function.
-        // The method below uses `md5` which is 128-bit and converts it to `Long`.
-        return md5()
-    }
-
     private fun emptyClass() = ClassNode().also {
         // A name is required
         it.name = "SomeClass"

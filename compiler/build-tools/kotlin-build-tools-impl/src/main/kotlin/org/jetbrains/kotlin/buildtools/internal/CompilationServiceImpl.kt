@@ -12,6 +12,7 @@ import org.jetbrains.kotlin.build.report.BuildReporter
 import org.jetbrains.kotlin.build.report.metrics.DoNothingBuildMetricsReporter
 import org.jetbrains.kotlin.buildtools.api.*
 import org.jetbrains.kotlin.buildtools.api.jvm.ClassSnapshotGranularity
+import org.jetbrains.kotlin.buildtools.api.jvm.ClasspathEntrySnapshot
 import org.jetbrains.kotlin.buildtools.api.jvm.ClasspathSnapshotBasedIncrementalCompilationApproachParameters
 import org.jetbrains.kotlin.buildtools.api.jvm.JvmCompilationConfiguration
 import org.jetbrains.kotlin.cli.common.ExitCode
@@ -67,8 +68,12 @@ private fun transformUrlToFile(url: URL) = url.toURI().toPath().toFile()
 internal object CompilationServiceImpl : CompilationService {
     private val buildIdToSessionFlagFile: MutableMap<ProjectId, File> = ConcurrentHashMap()
 
-    override fun calculateClasspathSnapshot(classpathEntry: File, granularity: ClassSnapshotGranularity) =
-        ClasspathEntrySnapshotImpl(
+    override fun calculateClasspathSnapshot(
+        classpathEntry: File,
+        granularity: ClassSnapshotGranularity,
+        parseInlinedLocalClasses: Boolean
+    ): ClasspathEntrySnapshot {
+        return ClasspathEntrySnapshotImpl(
             ClasspathEntrySnapshotter.snapshot(
                 classpathEntry,
                 //TODO(KT-62555) one last step - add argument
@@ -76,6 +81,7 @@ internal object CompilationServiceImpl : CompilationService {
                 DoNothingBuildMetricsReporter
             )
         )
+    }
 
     override fun makeCompilerExecutionStrategyConfiguration() = CompilerExecutionStrategyConfigurationImpl()
 

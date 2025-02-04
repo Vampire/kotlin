@@ -7,7 +7,6 @@ package org.jetbrains.kotlin.incremental.impl
 
 import com.intellij.util.io.DataExternalizer
 import org.jetbrains.kotlin.incremental.KotlinClassInfo.ExtraInfo
-import org.jetbrains.kotlin.incremental.impl.ClassNodeSnapshotter.hashToLong
 import org.jetbrains.kotlin.incremental.impl.ClassNodeSnapshotter.snapshotClassExcludingMembers
 import org.jetbrains.kotlin.incremental.impl.ClassNodeSnapshotter.snapshotMethod
 import org.jetbrains.kotlin.incremental.impl.ClassNodeSnapshotter.sortClassMembers
