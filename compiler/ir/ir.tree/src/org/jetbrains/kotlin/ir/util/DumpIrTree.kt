@@ -159,7 +159,7 @@ class DumpIrTreeVisitor(
 ) : IrVisitor<Unit, String>() {
 
     private val printer = Printer(out, "  ")
-    private val elementRenderer = RenderIrElementVisitor(options)
+    private val elementRenderer = RenderIrElementVisitor(options, isUsedForIrDump = true)
     private fun IrType.render() = elementRenderer.renderType(this)
 
     private fun List<IrDeclaration>.ordered(): List<IrDeclaration> = if (options.stableOrder) stableOrdered() else this
@@ -202,7 +202,7 @@ class DumpIrTreeVisitor(
             runIf(options.printSealedSubclasses) {
                 declaration.sealedSubclasses.dumpItems("sealedSubclasses") { it.dump() }
             }
-            declaration.thisReceiver?.accept(this, "\$this")
+            declaration.thisReceiver?.accept(this, "thisReceiver")
             declaration.typeParameters.dumpElements()
             declaration.declarations.ordered().dumpElements()
         }
@@ -227,19 +227,11 @@ class DumpIrTreeVisitor(
         if (declaration.isHidden()) return
         if (declaration.isExpect && !options.printExpectDeclarations) return
         declaration.dumpLabeledElementWith(data) {
+            declaration.typeParameters.dumpElements()
+            declaration.parameters.dumpElements()
             dumpAnnotations(declaration)
             declaration.correspondingPropertySymbol?.dumpInternal("correspondingProperty")
             declaration.overriddenSymbols.dumpFakeOverrideSymbols()
-            declaration.typeParameters.dumpElements()
-            declaration.dispatchReceiverParameter?.accept(this, "\$this")
-
-            val contextReceiverParametersCount = declaration.contextReceiverParametersCount
-            if (contextReceiverParametersCount > 0) {
-                printer.println("contextReceiverParametersCount: $contextReceiverParametersCount")
-            }
-
-            declaration.extensionReceiverParameter?.accept(this, "\$receiver")
-            declaration.valueParameters.dumpElements()
             declaration.body?.accept(this, "")
         }
     }
@@ -260,10 +252,9 @@ class DumpIrTreeVisitor(
     override fun visitConstructor(declaration: IrConstructor, data: String) {
         if (declaration.isHidden()) return
         declaration.dumpLabeledElementWith(data) {
-            dumpAnnotations(declaration)
             declaration.typeParameters.dumpElements()
-            declaration.dispatchReceiverParameter?.accept(this, "\$outer")
-            declaration.valueParameters.dumpElements()
+            declaration.parameters.dumpElements()
+            dumpAnnotations(declaration)
             declaration.body?.accept(this, "")
         }
     }
@@ -310,47 +301,19 @@ class DumpIrTreeVisitor(
     override fun visitMemberAccess(expression: IrMemberAccessExpression<*>, data: String) {
         expression.dumpLabeledElementWith(data) {
             dumpTypeArguments(expression)
-            expression.dispatchReceiver?.accept(this, "\$this")
-            expression.extensionReceiver?.accept(this, "\$receiver")
             val valueParameterNames = expression.getValueParameterNamesForDebug(options)
-            for (index in 0 until expression.valueArgumentsCount) {
-                expression.getValueArgument(index)?.accept(this, valueParameterNames[index])
+            for ((index, value) in expression.arguments.withIndex()) {
+                value?.accept(this, "ARG ${valueParameterNames[index]}")
             }
-        }
-    }
-
-    override fun visitConstructorCall(expression: IrConstructorCall, data: String) {
-        expression.dumpLabeledElementWith(data) {
-            dumpTypeArguments(expression)
-            expression.outerClassReceiver?.accept(this, "\$outer")
-            dumpConstructorValueArguments(expression)
-        }
-    }
-
-    private fun dumpConstructorValueArguments(expression: IrConstructorCall) {
-        val valueParameterNames = expression.getValueParameterNamesForDebug(options)
-        for (index in 0 until expression.valueArgumentsCount) {
-            expression.getValueArgument(index)?.accept(this, valueParameterNames[index])
         }
     }
 
     private fun dumpTypeArguments(expression: IrMemberAccessExpression<*>) {
         val typeParameterNames = expression.getTypeParameterNames(expression.typeArguments.size)
         for (index in 0 until expression.typeArguments.size) {
-            printer.println("<${typeParameterNames[index]}>: ${expression.renderTypeArgument(index)}")
-        }
-    }
-
-    private fun dumpTypeArguments(expression: IrConstructorCall) {
-        val typeParameterNames = expression.getTypeParameterNames(expression.typeArguments.size)
-        for (index in 0 until expression.typeArguments.size) {
             val typeParameterName = typeParameterNames[index]
-            val parameterLabel =
-                if (index < expression.classTypeArgumentsCount)
-                    "class: $typeParameterName"
-                else
-                    typeParameterName
-            printer.println("<$parameterLabel>: ${expression.renderTypeArgument(index)}")
+            val prefix = if (expression is IrConstructorCall && index < expression.classTypeArgumentsCount) "(of class) " else ""
+            printer.println("TYPE_ARG $prefix$typeParameterName: ${expression.renderTypeArgument(index)}")
         }
     }
 
@@ -401,10 +364,10 @@ class DumpIrTreeVisitor(
 
     override fun visitRichFunctionReference(expression: IrRichFunctionReference, data: String) {
         expression.dumpLabeledElementWith(data) {
-            val names = expression.invokeFunction.getValueParameterNamesForDebug(expression.boundValues.size, options)
             expression.overriddenFunctionSymbol.dumpInternal("overriddenFunctionSymbol")
             expression.boundValues.forEachIndexed { index, value ->
-                value.accept(this, "bound ${names[index]}")
+                val name = expression.invokeFunction.parameters.getOrNull(index)?.renderValueParameterName(options) ?: "${index + 1}"
+                value.accept(this, "bound $name")
             }
             expression.invokeFunction.accept(this, "invoke")
         }
@@ -412,9 +375,9 @@ class DumpIrTreeVisitor(
 
     override fun visitRichPropertyReference(expression: IrRichPropertyReference, data: String) {
         expression.dumpLabeledElementWith(data) {
-            val names = expression.getterFunction.getValueParameterNamesForDebug(expression.boundValues.size, options)
             expression.boundValues.forEachIndexed { index, value ->
-                value.accept(this, "bound ${names[index]}")
+                val name = expression.getterFunction.parameters.getOrNull(index)?.renderValueParameterName(options) ?: "${index + 1}"
+                value.accept(this, "bound $name")
             }
             expression.getterFunction.accept(this, "getter")
             expression.setterFunction?.accept(this, "setter")
@@ -489,7 +452,7 @@ class DumpIrTreeVisitor(
     override fun visitConstantObject(expression: IrConstantObject, data: String) {
         expression.dumpLabeledElementWith(data) {
             for ((index, argument) in expression.valueArguments.withIndex()) {
-                argument.accept(this, expression.constructor.owner.valueParameters[index].name.toString())
+                argument.accept(this, expression.constructor.owner.parameters[index].name.toString())
             }
         }
     }
@@ -574,24 +537,11 @@ class DumpTreeFromSourceLineVisitor(
 }
 
 internal fun IrMemberAccessExpression<*>.getValueParameterNamesForDebug(options: DumpIrTreeOptions): List<String> {
-    val expectedCount = valueArgumentsCount
-    if (symbol.isBound) {
-        val owner = symbol.owner
-        if (owner is IrFunction) {
-            return owner.getValueParameterNamesForDebug(expectedCount, options)
-        }
+    val owner = if (symbol.isBound) symbol.owner as? IrFunction else null
+    return arguments.indices.map { index ->
+        val param = owner?.parameters?.getOrNull(index)
+        param?.renderValueParameterName(options) ?: "${index + 1}"
     }
-    return getPlaceholderParameterNames(expectedCount)
-}
-
-private fun IrFunction.getValueParameterNamesForDebug(
-    expectedCount: Int,
-    options: DumpIrTreeOptions,
-): List<String> = (0 until expectedCount).map {
-    if (it < valueParameters.size)
-        valueParameters[it].renderValueParameterName(options)
-    else
-        "${it + 1}"
 }
 
 internal fun getPlaceholderParameterNames(expectedCount: Int) =

@@ -23,7 +23,6 @@ import org.jetbrains.kotlin.name.SpecialNames.IMPLICIT_SET_PARAMETER
 import org.jetbrains.kotlin.renderer.DescriptorRenderer
 import org.jetbrains.kotlin.types.Variance
 import org.jetbrains.kotlin.util.capitalizeDecapitalize.toLowerCaseAsciiOnly
-import org.jetbrains.kotlin.utils.addIfNotNull
 import org.jetbrains.kotlin.utils.addToStdlib.ifTrue
 import org.jetbrains.kotlin.utils.addToStdlib.runIf
 import org.jetbrains.kotlin.utils.addToStdlib.runUnless
@@ -32,8 +31,10 @@ import java.io.File
 fun IrElement.render(options: DumpIrTreeOptions = DumpIrTreeOptions()) =
     accept(RenderIrElementVisitor(options), null)
 
-open class RenderIrElementVisitor(private val options: DumpIrTreeOptions = DumpIrTreeOptions()) :
-    IrVisitor<String, Nothing?>() {
+open class RenderIrElementVisitor(
+    private val options: DumpIrTreeOptions = DumpIrTreeOptions(),
+    private var isUsedForIrDump: Boolean = false,
+) : IrVisitor<String, Nothing?>() {
 
     private val flagsRenderer = FlagsRenderer(options.declarationFlagsFilter, isReference = false)
     private val variableNameData = VariableNameData(options.normalizeNames)
@@ -156,22 +157,17 @@ open class RenderIrElementVisitor(private val options: DumpIrTreeOptions = DumpI
 
                 renderTypeParameters(declaration)
 
-                appendIterableWith(declaration.valueParameters, "(", ")", ", ") { valueParameter ->
+                appendIterableWith(declaration.nonDispatchParameters, "(", ")", ", ") { valueParameter ->
                     val varargElementType = valueParameter.varargElementType
                     if (varargElementType != null) {
                         append("vararg ")
-                        runUnless(hideParameterNames) {
-                            append(valueParameter.renderValueParameterName(options))
-                            append(": ")
-                        }
-                        append(varargElementType.renderTypeWithRenderer(null, options))
-                    } else {
-                        runUnless(hideParameterNames) {
-                            append(valueParameter.renderValueParameterName(options))
-                            append(": ")
-                        }
-                        append(valueParameter.type.renderTypeWithRenderer(null, options))
                     }
+
+                    runUnless(hideParameterNames) {
+                        append(valueParameter.renderValueParameterName(options))
+                        append(": ")
+                    }
+                    append(valueParameter.type.renderTypeWithRenderer(null, options))
                 }
 
                 if (declaration is IrSimpleFunction) {
@@ -309,17 +305,18 @@ open class RenderIrElementVisitor(private val options: DumpIrTreeOptions = DumpI
                     "name:$name " +
                     renderSignatureIfEnabled(options.printSignatures) +
                     "visibility:$visibility modality:$modality " +
-                    renderTypeParameters() + " " +
-                    renderValueParameterTypes() + " " +
+                    (if (!isUsedForIrDump) {
+                        renderTypeParameters() + " " +
+                        renderValueParameterTypes() + " "
+                    } else "") +
                     "returnType:${renderReturnType(this@RenderIrElementVisitor, options)} " +
                     renderSimpleFunctionFlags(flagsRenderer)
         }
 
-    private fun IrFunction.renderValueParameterTypes(): String = buildList {
-        addIfNotNull(dispatchReceiverParameter?.run { "\$this:${renderValueParameterType(options)}" })
-        addIfNotNull(extensionReceiverParameter?.run { "\$receiver:${type.render()}" })
-        valueParameters.mapTo(this) { "${it.renderValueParameterName(options)}:${it.type.render()}" }
-    }.joinToString(separator = ", ", prefix = "(", postfix = ")")
+    private fun IrFunction.renderValueParameterTypes(): String =
+        parameters.joinToString(separator = ", ", prefix = "(", postfix = ")") {
+            "${it.renderValueParameterName(options)}:${it.renderValueParameterType(options)}"
+        }
 
     override fun visitConstructor(declaration: IrConstructor, data: Nothing?): String =
         declaration.runTrimEnd {
@@ -328,8 +325,10 @@ open class RenderIrElementVisitor(private val options: DumpIrTreeOptions = DumpI
                     renderOriginIfNonTrivial(options) +
                     renderSignatureIfEnabled(options.printSignatures) +
                     "visibility:$visibility " +
-                    renderTypeParameters() + " " +
-                    renderValueParameterTypes() + " " +
+                    (if (!isUsedForIrDump) {
+                        renderTypeParameters() + " " +
+                        renderValueParameterTypes() + " "
+                    } else "") +
                     "returnType:${renderReturnType(this@RenderIrElementVisitor, options)} " +
                     renderConstructorFlags(flagsRenderer)
         }
@@ -375,8 +374,9 @@ open class RenderIrElementVisitor(private val options: DumpIrTreeOptions = DumpI
             "VALUE_PARAMETER" +
                     "${renderOffsets(options)} " +
                     renderOriginIfNonTrivial(options) +
+                    "kind:$kind " +
                     "name:${renderValueParameterName(options)} " +
-                    (if (indexInOldValueParameters >= 0) "index:$indexInOldValueParameters " else "") +
+                    (if (indexInParameters >= 0) "index:$indexInParameters " else "") +
                     "type:${renderValueParameterType(options)} " +
                     (varargElementType?.let { "varargElementType:${it.render()} " } ?: "") +
                     renderValueParameterFlags(flagsRenderer)
@@ -1023,14 +1023,13 @@ private fun StringBuilder.renderAsAnnotation(
         }
     }
 
-    if (irAnnotation.valueArgumentsCount == 0) return
+    if (irAnnotation.arguments.isEmpty()) return
 
     val valueParameterNames = irAnnotation.getValueParameterNamesForDebug(options)
-
-    appendIterableWith(0 until irAnnotation.valueArgumentsCount, separator = ", ", prefix = "(", postfix = ")") {
+    appendIterableWith(irAnnotation.arguments.indices, separator = ", ", prefix = "(", postfix = ")") {
         append(valueParameterNames[it])
         append(" = ")
-        renderAsAnnotationArgument(irAnnotation.getValueArgument(it), renderer, options)
+        renderAsAnnotationArgument(irAnnotation.arguments[it], renderer, options)
     }
 }
 
