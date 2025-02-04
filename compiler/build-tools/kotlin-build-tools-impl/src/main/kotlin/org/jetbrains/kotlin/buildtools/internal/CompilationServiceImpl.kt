@@ -76,8 +76,7 @@ internal object CompilationServiceImpl : CompilationService {
         return ClasspathEntrySnapshotImpl(
             ClasspathEntrySnapshotter.snapshot(
                 classpathEntry,
-                //TODO(KT-62555) one last step - add argument
-                ClasspathEntrySnapshotter.Settings(granularity, parseInlinedLocalClasses = false),
+                ClasspathEntrySnapshotter.Settings(granularity, parseInlinedLocalClasses),
                 DoNothingBuildMetricsReporter
             )
         )

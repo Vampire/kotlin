@@ -53,6 +53,9 @@ abstract class BuildToolsApiClasspathEntrySnapshotTransform : TransformAction<Bu
 
         @get:Internal
         internal abstract val suppressVersionInconsistencyChecks: Property<Boolean>
+
+        @get:Input
+        abstract val parseInlinedLocalClasses: Property<Boolean>
     }
 
     @get:Classpath
@@ -86,9 +89,7 @@ abstract class BuildToolsApiClasspathEntrySnapshotTransform : TransformAction<Bu
             parameters.gradleUserHomeDir.get().asFile,
             parameters.gradleReadOnlyDependenciesCacheDir.orNull?.asFile
         )
-        val parseInlinedLocalClasses = false
-        //TODO(KT-62555) one last step - extend this to the actual gradle properties / transform input params
-        // tests probably call calculateClasspathSnapshot directly anyway? well, no matter
+        val parseInlinedLocalClasses = parameters.parseInlinedLocalClasses.get()
 
         val classLoader = parameters.classLoadersCachingService.get()
             .getClassLoader(parameters.classpath.toList(), SharedApiClassesClassLoaderProvider)
