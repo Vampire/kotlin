@@ -9,6 +9,40 @@ import org.jetbrains.kotlin.incremental.KotlinClassInfo
 import org.jetbrains.kotlin.load.kotlin.header.KotlinClassHeader
 import org.jetbrains.kotlin.name.ClassId
 
+data class MethodLocator(
+    val classId: ClassId,
+    val methodSignature: String
+)
+
+sealed class ClassInfoGeneratorContext()
+
+/**
+ * We need a "default" context for generic KotlinClassInfo.createFrom users, and it must be immutable,
+ * so sealed class looks like a good solution (singleton version of the api has no mutable state, and generic version
+ * can work with some version of context)
+ */
+object DefaultClassInfoGeneratorContext : ClassInfoGeneratorContext()
+
+/**
+ * This version of [ClassInfoGeneratorContext] can be used in ClasspathSnapshot transform
+ * to enable coordination on the jar snapshotter level:
+ *
+ * in the initial pass, inline functions are detected, and inlined local classes are noted
+ * in the second pass, these local classes are processed, and their contents are used as part of inline function hash
+ *
+ * The intuition is, if there're inline functions in a module, there are a lot of them, and they invoke each other.
+ * So a single local class could be used in multiple inline functions, and ...
+ *
+ * //TODO finish that thought
+ * //TODO(KT-62555) more importantly, test scenario with f1(f2(localF3())) - is the f1 hash affected by change in localf3? it should, shouldn't it?
+ * (maybe not, depends on the actual behavior down the line)
+ */
+data class ClassInfoGeneratorContextWithLocalClassSnapshotting(
+    val incompleteClassSnapshots: HashSet<String> = HashSet(),
+    val methodToLocalClassUsages: HashMap<MethodLocator, ArrayList<String>> = HashMap(),
+    val localClassStateSnapshots: HashMap<String, Long> = HashMap(),
+) : ClassInfoGeneratorContext()
+
 /**
  * We need to provide the normal behavior for compatibility with pre-depgraph JPS,
  * but we also need to allow configurable behavior for Gradle Classpath Snapshotting transformations
@@ -17,20 +51,8 @@ import org.jetbrains.kotlin.name.ClassId
  * api snapshotting logic could be removed from build-common
  */
 class KotlinClassInfoGenerator(
-    val context: Context = Context()
+    val context: ClassInfoGeneratorContext = DefaultClassInfoGeneratorContext
 ) {
-    /**
-     * This is NOT a stable API. Existing users rely on [KotlinClassInfo.createFrom].
-     *
-     * Context would be expanded to support cases where class info creation depends on shared info
-     * or should update shared info.
-     *
-     * KotlinClassInfo uses it as a singleton, so default Context should be lightweight.
-     */
-    data class Context(
-        val useInlinedLocalClassesAsPartOfInlineFunctionHash: Boolean = false
-    )
-
     fun createFrom(classId: ClassId, classHeader: KotlinClassHeader, classContents: ByteArray): KotlinClassInfo {
         return KotlinClassInfo(
             classId,
@@ -38,8 +60,7 @@ class KotlinClassInfoGenerator(
             classHeader.data ?: classHeader.incompatibleData ?: emptyArray(),
             classHeader.strings ?: emptyArray(),
             classHeader.multifileClassName,
-            //TODO (KT-62555) here extra info generator would use context for a more advanced behavior
-            extraInfo = ExtraClassInfoGenerator.getExtraInfo(classHeader, classContents)
+            extraInfo = ExtraClassInfoGenerator.getExtraInfo(classHeader, classContents, context)
         )
     }
 }

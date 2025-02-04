@@ -8,14 +8,16 @@ package org.jetbrains.kotlin.incremental.classpathDiff
 import org.jetbrains.kotlin.build.report.metrics.*
 import org.jetbrains.kotlin.buildtools.api.jvm.ClassSnapshotGranularity
 import org.jetbrains.kotlin.incremental.DifferenceCalculatorForPackageFacade.Companion.getNonPrivateMembers
-import org.jetbrains.kotlin.incremental.KotlinClassInfo
 import org.jetbrains.kotlin.incremental.PackagePartProtoData
 import org.jetbrains.kotlin.buildtools.api.jvm.ClassSnapshotGranularity.CLASS_MEMBER_LEVEL
+import org.jetbrains.kotlin.incremental.impl.ClassInfoGeneratorContext
+import org.jetbrains.kotlin.incremental.impl.ClassInfoGeneratorContextWithLocalClassSnapshotting
 import org.jetbrains.kotlin.incremental.impl.ClassNodeSnapshotter.snapshotClass
 import org.jetbrains.kotlin.incremental.impl.ClassNodeSnapshotter.snapshotClassExcludingMembers
 import org.jetbrains.kotlin.incremental.impl.ClassNodeSnapshotter.snapshotField
 import org.jetbrains.kotlin.incremental.impl.ClassNodeSnapshotter.snapshotMethod
 import org.jetbrains.kotlin.incremental.impl.ClassNodeSnapshotter.sortClassMembers
+import org.jetbrains.kotlin.incremental.impl.DefaultClassInfoGeneratorContext
 import org.jetbrains.kotlin.incremental.impl.KotlinClassInfoGenerator
 import org.jetbrains.kotlin.incremental.impl.SelectiveClassVisitor
 import org.jetbrains.kotlin.incremental.impl.hashToLong
@@ -85,18 +87,18 @@ object ClassSnapshotter {
         val classNameToClassFileMap: Map<JvmClassName, ClassFileWithContentsProvider> = classes.associateBy { it.classFile.getClassName() }
         val classFileToSnapshotMap = mutableMapOf<ClassFileWithContentsProvider, ClassSnapshot>()
 
-        // TODO (KT-62555) define real generator implementation context type
-        //
         // the general implementation idea is as follows:
         // 1. do normal pass, detect local class accesses in inline functions. [context holds two-level Map "class ->> fun ->> used lambda instances"]
         // 2. (we already have classNameToClassFileMap) on Snapshotter level, do extra bytecode-reading pass on the required local classes.
         //    I think we can hash pretty much everything, future tests will confirm or deny that
         // 3. update the extraInfo with affected inline functions
         // P.S. if some of the used local classes are from the external modules, we could not use them for updating the extraInfo.
-        //      it's a limitation but it's not too bad for the initial solution
-        val generatorContext = KotlinClassInfoGenerator.Context(
-            useInlinedLocalClassesAsPartOfInlineFunctionHash = settings.parseInlinedLocalClasses
-        )
+        //      it's a limitation but it's not too bad for the initial solution //TODO (KT-62555) ??? is it not too bad?
+        val generatorContext: ClassInfoGeneratorContext = if (settings.parseInlinedLocalClasses) {
+            ClassInfoGeneratorContextWithLocalClassSnapshotting()
+        } else {
+            DefaultClassInfoGeneratorContext
+        }
         val generator = KotlinClassInfoGenerator(generatorContext)
 
         fun snapshotClass(classFile: ClassFileWithContentsProvider): ClassSnapshot {
@@ -126,7 +128,29 @@ object ClassSnapshotter {
             }
         }
 
-        return classes.map { snapshotClass(it) }
+        val firstPass = classes.map { snapshotClass(it) }
+
+        when (generatorContext) {
+            is DefaultClassInfoGeneratorContext -> return firstPass
+            is ClassInfoGeneratorContextWithLocalClassSnapshotting -> {
+                if (generatorContext.incompleteClassSnapshots.isEmpty()) {
+                    return firstPass
+                }
+                //TODO enrich data
+                println("ics")
+                println(generatorContext.incompleteClassSnapshots)
+                println("mlcu")
+                println(generatorContext.methodToLocalClassUsages)
+                println("lcss")
+                println(generatorContext.localClassStateSnapshots)
+                val secondPass = ArrayList<ClassSnapshot>(firstPass)
+                for (i in secondPass.indices) {
+                    //TODO cheap-replace the affected items
+                    //if (secondPass[i].)
+                }
+                return secondPass
+            }
+        }
     }
 
     /**
