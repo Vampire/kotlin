@@ -365,8 +365,9 @@ class DumpIrTreeVisitor(
     override fun visitRichFunctionReference(expression: IrRichFunctionReference, data: String) {
         expression.dumpLabeledElementWith(data) {
             expression.overriddenFunctionSymbol.dumpInternal("overriddenFunctionSymbol")
+            val parameterNames = getValueParameterNamesForDebug(expression.invokeFunction, expression.boundValues.size, options)
             expression.boundValues.forEachIndexed { index, value ->
-                val name = expression.invokeFunction.parameters.getOrNull(index)?.renderValueParameterName(options) ?: "${index + 1}"
+                val name = parameterNames[index]
                 value.accept(this, "bound $name")
             }
             expression.invokeFunction.accept(this, "invoke")
@@ -375,8 +376,9 @@ class DumpIrTreeVisitor(
 
     override fun visitRichPropertyReference(expression: IrRichPropertyReference, data: String) {
         expression.dumpLabeledElementWith(data) {
+            val parameterNames = getValueParameterNamesForDebug(expression.getterFunction, expression.boundValues.size, options)
             expression.boundValues.forEachIndexed { index, value ->
-                val name = expression.getterFunction.parameters.getOrNull(index)?.renderValueParameterName(options) ?: "${index + 1}"
+                val name = parameterNames[index]
                 value.accept(this, "bound $name")
             }
             expression.getterFunction.accept(this, "getter")
@@ -537,10 +539,14 @@ class DumpTreeFromSourceLineVisitor(
 }
 
 internal fun IrMemberAccessExpression<*>.getValueParameterNamesForDebug(options: DumpIrTreeOptions): List<String> {
-    val owner = if (symbol.isBound) symbol.owner as? IrFunction else null
-    return arguments.indices.map { index ->
-        val param = owner?.parameters?.getOrNull(index)
-        param?.renderValueParameterName(options) ?: "${index + 1}"
+    val function = if (symbol.isBound) symbol.owner as? IrFunction else null
+    return getValueParameterNamesForDebug(function, arguments.size, options)
+}
+
+internal fun getValueParameterNamesForDebug(function: IrFunction?, amount: Int, options: DumpIrTreeOptions): List<String> {
+    return (0..<amount).map { index ->
+        val param = function?.parameters?.getOrNull(index)
+        param?.renderValueParameterName(options, disambiguate = true) ?: "${index + 1}"
     }
 }
 

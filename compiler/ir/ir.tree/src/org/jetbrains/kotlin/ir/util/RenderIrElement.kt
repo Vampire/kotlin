@@ -128,7 +128,7 @@ open class RenderIrElementVisitor(
         override fun visitValueParameter(declaration: IrValueParameter, data: Nothing?) =
             buildTrimEnd {
                 runUnless(hideParameterNames) {
-                    append(declaration.renderValueParameterName(options))
+                    append(declaration.renderValueParameterName(options, disambiguate = true))
                     append(": ")
                 }
                 append(declaration.type.renderTypeWithRenderer(null, options))
@@ -668,9 +668,18 @@ private fun IrValueParameter.renderValueParameterType(options: DumpIrTreeOptions
     }
 }
 
-internal fun IrValueParameter.renderValueParameterName(options: DumpIrTreeOptions): String {
-    val name = runIf(name == IMPLICIT_SET_PARAMETER) { options.replaceImplicitSetterParameterNameWith } ?: name
-    return name.asString()
+internal fun IrValueParameter.renderValueParameterName(options: DumpIrTreeOptions, disambiguate: Boolean = false): String {
+    val name = runIf(name == IMPLICIT_SET_PARAMETER) { options.replaceImplicitSetterParameterNameWith?.asString() } ?: name.asString()
+    if (disambiguate) {
+        val parent = _parent
+        if (parent is IrFunction) {
+            if (parent.parameters.any { it !== this && it.renderValueParameterName(options) == name }) {
+                return "$name(index:${indexInParameters})"
+            }
+        }
+    }
+
+    return name
 }
 
 internal fun DescriptorRenderer.renderDescriptor(descriptor: DeclarationDescriptor): String =
