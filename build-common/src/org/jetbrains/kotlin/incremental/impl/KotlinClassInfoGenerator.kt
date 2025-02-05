@@ -7,12 +7,8 @@ package org.jetbrains.kotlin.incremental.impl
 
 import org.jetbrains.kotlin.incremental.KotlinClassInfo
 import org.jetbrains.kotlin.load.kotlin.header.KotlinClassHeader
+import org.jetbrains.kotlin.metadata.jvm.deserialization.JvmMemberSignature
 import org.jetbrains.kotlin.name.ClassId
-
-data class MethodLocator(
-    val classId: ClassId,
-    val methodSignature: String
-)
 
 sealed class ClassInfoGeneratorContext()
 
@@ -39,9 +35,14 @@ object DefaultClassInfoGeneratorContext : ClassInfoGeneratorContext()
  */
 data class ClassInfoGeneratorContextWithLocalClassSnapshotting(
     val incompleteClassSnapshots: HashSet<String> = HashSet(),
-    val methodToLocalClassUsages: HashMap<MethodLocator, ArrayList<String>> = HashMap(),
+    val methodToLocalClassUsages: HashMap<MethodWithOwner, ArrayList<String>> = HashMap(),
     val localClassStateSnapshots: HashMap<String, Long> = HashMap(),
-) : ClassInfoGeneratorContext()
+) : ClassInfoGeneratorContext() {
+
+    data class MethodWithOwner(
+        val owner: String, val method: JvmMemberSignature.Method
+    )
+}
 
 /**
  * We need to provide the normal behavior for compatibility with pre-depgraph JPS,

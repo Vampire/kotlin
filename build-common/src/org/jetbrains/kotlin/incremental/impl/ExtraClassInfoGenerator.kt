@@ -23,63 +23,8 @@ import org.jetbrains.kotlin.load.kotlin.header.KotlinClassHeader
 import org.jetbrains.kotlin.metadata.jvm.deserialization.JvmMemberSignature
 import org.jetbrains.org.objectweb.asm.ClassReader
 import org.jetbrains.org.objectweb.asm.ClassVisitor
-import org.jetbrains.org.objectweb.asm.MethodVisitor
-import org.jetbrains.org.objectweb.asm.Opcodes
 import org.jetbrains.org.objectweb.asm.tree.ClassNode
-import org.jetbrains.org.objectweb.asm.util.Textifier
-import org.jetbrains.org.objectweb.asm.util.TraceMethodVisitor
 
-private class InlineFunctionsSpecialSupportClassVisitor(
-    val classNode: ClassNode,
-    val context: ClassInfoGeneratorContextWithLocalClassSnapshotting
-) : ClassVisitor(Opcodes.ASM9, classNode) {
-    val inlineFunctionSnapshotter = InlineFunctionSnapshotter()
-    val textifier = Textifier() //TODO where does it exist //TODO check that i really need it - e.g. lambdas without debug info change - replace 1 with 3 etc
-
-    override fun visitMethod(
-        access: Int,
-        name: String?,
-        descriptor: String?,
-        signature: String?,
-        exceptions: Array<out String?>?
-    ): MethodVisitor? {
-        println("creation of methodvisitor? $name")
-
-        val methodVisitor = object : MethodVisitor(Opcodes.ASM9, super.visitMethod(access, name, descriptor, signature, exceptions)) {
-
-            override fun visitCode() {
-                println("visit begin of methodvisitor? $name")
-                super.visitCode()
-            }
-
-            override fun visitFieldInsn(opcode: Int, owner: String?, name: String?, descriptor: String?) {
-                if (opcode == Opcodes.GETSTATIC && name == "INSTANCE") {
-                    println("getstaticing $owner $name $descriptor")
-                    context.incompleteClassSnapshots.add(classNode.name) //TODO so this is supposed to be the fqdn; good to add some collision tests
-                }
-                super.visitFieldInsn(opcode, owner, name, descriptor)
-            }
-            override fun visitTypeInsn(opcode: Int, type: String?) {
-                super.visitTypeInsn(opcode, type)
-            }
-            override fun visitEnd() {
-                println("visit end of methodvisitor")
-                val justDebug = textifier.getText()
-                //TODO put the printer.gettext into the map
-                super.visitEnd()
-            }
-
-        }
-        return TraceMethodVisitor(methodVisitor, textifier)
-        //   return inlineFunctionSnapshotter.methodVisitor(classNode)
-        //return
-    }
-
-    override fun visitInnerClass(name: String?, outerName: String?, innerName: String?, access: Int) {
-        println("visit inner class $name")
-        super.visitInnerClass(name, outerName, innerName, access)
-    }
-}
 
 internal object ExtraClassInfoGenerator {
     fun getExtraInfo(classHeader: KotlinClassHeader, classContents: ByteArray, context: ClassInfoGeneratorContext): ExtraInfo {
@@ -99,7 +44,9 @@ internal object ExtraClassInfoGenerator {
         val selectiveClassVisitor = SelectiveClassVisitor(
             cv = when (context) {
                 is DefaultClassInfoGeneratorContext -> classNode
-                is ClassInfoGeneratorContextWithLocalClassSnapshotting -> InlineFunctionsSpecialSupportClassVisitor(classNode, context)
+                is ClassInfoGeneratorContextWithLocalClassSnapshotting -> {
+                    InlineFunctionSnapshotter.getAccessibleClassVisitor(classNode, context)
+                }
             },
             shouldVisitField = { _: JvmMemberSignature.Field, isPrivate: Boolean, isConstant: Boolean ->
                 !isPrivate && isConstant

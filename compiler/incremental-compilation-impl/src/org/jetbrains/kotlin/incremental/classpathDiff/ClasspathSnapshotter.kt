@@ -18,6 +18,7 @@ import org.jetbrains.kotlin.incremental.impl.ClassNodeSnapshotter.snapshotField
 import org.jetbrains.kotlin.incremental.impl.ClassNodeSnapshotter.snapshotMethod
 import org.jetbrains.kotlin.incremental.impl.ClassNodeSnapshotter.sortClassMembers
 import org.jetbrains.kotlin.incremental.impl.DefaultClassInfoGeneratorContext
+import org.jetbrains.kotlin.incremental.impl.InlineFunctionSnapshotter
 import org.jetbrains.kotlin.incremental.impl.KotlinClassInfoGenerator
 import org.jetbrains.kotlin.incremental.impl.SelectiveClassVisitor
 import org.jetbrains.kotlin.incremental.impl.hashToLong
@@ -143,10 +144,44 @@ object ClassSnapshotter {
                 println(generatorContext.methodToLocalClassUsages)
                 println("lcss")
                 println(generatorContext.localClassStateSnapshots)
+
+                println("can work with:")
+                println(classes.map { it.classFile.unixStyleRelativePath })
+
+                for (entry in generatorContext.localClassStateSnapshots) {
+                    // here's a major fault point - what if we've identified the potential local classes poorly,
+                    // what if we're falling through to external dependencies, etc
+                    // the basic answer is ignoring everything we can't find, because it's clearly not a module-local local class
+
+                    // also would be nice to avoid parsing non-local classes
+
+                    // well, anyway
+                    // TODO: check that it works with package hierarchy inside of the module (foo/bar/clas.class etc)
+                    val internalClassName = JvmClassName.byInternalName(entry.key)
+                    val basicClassAccessor = classNameToClassFileMap.get(internalClassName) ?: continue
+                    val fullBodySnapshot = InlineFunctionSnapshotter.getFullClassSnapshot(basicClassAccessor.loadContents().contents)
+                    entry.setValue(fullBodySnapshot)
+                }
+
+                for (entry in generatorContext.incompleteClassSnapshots) {
+
+                }
+
+                println("done")
+                println("ics")
+                println(generatorContext.incompleteClassSnapshots)
+                println("mlcu")
+                println(generatorContext.methodToLocalClassUsages)
+                println("lcss")
+                println(generatorContext.localClassStateSnapshots)
+
                 val secondPass = ArrayList<ClassSnapshot>(firstPass)
                 for (i in secondPass.indices) {
                     //TODO cheap-replace the affected items
-                    //if (secondPass[i].)
+                    if (classes[i].loadContents())
+
+                        //TODO ok so, loadContents shouldn't be necessary, need to take proper accessor
+                        //TODO metrics are a MUST as i now realizes
                 }
                 return secondPass
             }
